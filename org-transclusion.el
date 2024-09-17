@@ -215,6 +215,7 @@ the \\+`link', \\+`keyword-plist', and \\+`copy' arguments.")
     org-transclusion-keyword-value-level
     org-transclusion-keyword-value-disable-auto
     org-transclusion-keyword-value-only-contents
+    org-transclusion-keyword-value-no-initial-heading
     org-transclusion-keyword-value-exclude-elements
     org-transclusion-keyword-value-expand-links
     org-transclusion-keyword-current-indentation)
@@ -868,6 +869,11 @@ It needs to be set in
     (list :level
           (string-to-number (org-strip-quotes (match-string 1 string))))))
 
+(defun org-transclusion-keyword-value-no-initial-heading (string)
+  (when (string-match ":no-initial-heading" string)
+    (list :no-initial-heading
+          (org-strip-quotes (match-string 0 string)))))
+
 (defun org-transclusion-keyword-value-only-contents (string)
   "It is a utility function used converting a keyword STRING to plist.
 It is meant to be used by `org-transclusion-get-string-to-plist'.
@@ -925,6 +931,7 @@ keyword.  If not, returns nil."
         (disable-auto (plist-get plist :disable-auto))
         (only-contents (plist-get plist :only-contents))
         (exclude-elements (plist-get plist :exclude-elements))
+        (no-initial-heading (plist-get plist :no-initial-heading))
         (expand-links (plist-get plist :expand-links))
         (custom-properties-string nil))
     (setq custom-properties-string
@@ -939,6 +946,7 @@ keyword.  If not, returns nil."
             (when level (format " :level %d" level))
             (when disable-auto (format " :disable-auto"))
             (when only-contents (format " :only-contents"))
+            (when no-initial-heading (format " :no-initial-heading"))
             (when exclude-elements (format " :exclude-elements \"%s\""
                                            exclude-elements))
             (when expand-links (format " :expand-links"))
@@ -1215,6 +1223,7 @@ property controls the filter applied to the transclusion."
       (let ((beg (org-element-property :begin el))
             (end (org-element-property :end el))
             (only-contents (plist-get plist :only-contents))
+            (no-initial-heading (plist-get plist :no-initial-heading))
             (exclude-elements
              (org-transclusion-keyword-plist-to-exclude-elements plist))
             (expand-links (plist-get plist :expand-links))
@@ -1240,6 +1249,16 @@ property controls the filter applied to the transclusion."
           (setq obj (org-element-map obj org-element-all-elements
                       #'org-transclusion-content-filter-org-only-contents
                       nil nil '(section) nil)))
+
+        (when no-initial-heading
+          (let ((first t))
+            (setq obj (org-element-map obj org-element-all-elements
+                        (lambda (data)
+                          (if (and first
+                                   (eq (org-element-type data) 'headline))
+                              (setq first nil)
+                            data))
+                        nil nil '(section) nil))))
 
         ;; Expand file names in all the links
         (when expand-links
