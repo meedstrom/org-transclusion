@@ -22,7 +22,7 @@
 ;; URL: https://github.com/nobiot/org-transclusion
 ;; Keywords: org-mode, transclusion, writing
 
-;; Version: 1.4.0
+;; Version: 1.4.0.50
 ;; Package-Requires: ((emacs "27.1") (org "9.4"))
 
 ;; This file is not part of GNU Emacs.
@@ -865,9 +865,12 @@ It needs to be set in
 It is meant to be used by `org-transclusion-get-string-to-plist'.
 It needs to be set in
 `org-transclusion-keyword-value-functions'."
-  (when (string-match ":level *\\([1-9]\\)" string)
+  (when (string-match ":level +\\([1-9]\\|auto\\)" string)
     (list :level
-          (string-to-number (org-strip-quotes (match-string 1 string))))))
+          (let ((value (org-strip-quotes (match-string 1 string))))
+            (if (equal "auto" value)
+                value
+              (string-to-number value))))))
 
 (defun org-transclusion-keyword-value-no-initial-heading (string)
   (when (string-match ":no-initial-heading" string)
@@ -943,7 +946,7 @@ keyword.  If not, returns nil."
                       (concat custom-properties-string " " str ))))))
     (concat "#+transclude: "
             link
-            (when level (format " :level %d" level))
+            (when level (format " :level %s" level))
             (when disable-auto (format " :disable-auto"))
             (when only-contents (format " :only-contents"))
             (when no-initial-heading (format " :no-initial-heading"))
@@ -1032,7 +1035,8 @@ based on the following arguments:
          (end-mkr)
          (ov-src (text-clone-make-overlay sbeg send sbuf)) ;; source-buffer overlay
          (tc-pair ov-src)
-         (content content))
+         (content content)
+         (context-level (org-reduced-level (org-current-level))))
     (when (org-transclusion-type-is-org type)
       (with-temp-buffer
         ;; This temp buffer needs to be in Org Mode
@@ -1042,7 +1046,10 @@ based on the following arguments:
         (org-with-point-at 1
           (let* ((to-level (plist-get keyword-values :level))
                  (level (org-transclusion-content-highest-org-headline))
-                 (diff (when (and level to-level) (- level to-level))))
+                 (diff (when (and level to-level)
+                         (if (equal "auto" to-level)
+                             (- level (1+ context-level))
+                           (- level to-level)))))
             (when diff
               (cond ((< diff 0) ; demote
                      (org-map-entries (lambda ()
@@ -1811,15 +1818,16 @@ ensure the settings revert to the user's setting prior to
   (let* ((pos (next-property-change (point) nil (line-end-position)))
          (keyword-plist (get-text-property pos
                                            'org-transclusion-orig-keyword))
-         (level (car (org-heading-components))))
-    ;; adjust keyword :level prop
-    (setq keyword-plist (plist-put keyword-plist :level level))
-    (put-text-property (point) (line-end-position)
-                       'org-transclusion-orig-keyword keyword-plist)
-    ;; refresh to get the text-prop corrected.
-    (save-excursion
-      (goto-char pos)
-      (org-transclusion-refresh))))
+         (level (org-reduced-level (org-current-level))))
+    (unless (equal "auto" (plist-get keyword-plist :level))
+      ;; adjust keyword :level prop
+      (setq keyword-plist (plist-put keyword-plist :level level))
+      (put-text-property (point) (line-end-position)
+                         'org-transclusion-orig-keyword keyword-plist)
+      ;; refresh to get the text-prop corrected.
+      (save-excursion
+        (goto-char pos)
+        (org-transclusion-refresh)))))
 
 (defun org-transclusion-promote-or-demote-subtree (&optional demote)
   "Promote or demote transcluded subtree.
